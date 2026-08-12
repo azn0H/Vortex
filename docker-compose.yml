@@ -1,0 +1,138 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+      - authentik-server
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env.production}
+      AUTHENTIK_DOMAIN: ${AUTHENTIK_DOMAIN:?Set AUTHENTIK_DOMAIN in .env.production}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env.production}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  web:
+    build:
+      context: ./src/Vortex.Web
+    restart: unless-stopped
+    environment:
+      VORTEX_OIDC_AUTHORITY: https://${AUTHENTIK_DOMAIN}/application/o/${VORTEX_OIDC_PROVIDER_SLUG}
+      VORTEX_OIDC_CLIENT_ID: ${VORTEX_OIDC_CLIENT_ID}
+      VORTEX_OIDC_SCOPE: ${VORTEX_OIDC_SCOPE:-openid profile email}
+      VORTEX_OIDC_ROLES_CLAIM: ${VORTEX_OIDC_ROLES_CLAIM:-roles}
+
+  api:
+    build:
+      context: ./src/Vortex.Api
+    restart: unless-stopped
+    depends_on:
+      app-postgresql:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: Host=app-postgresql;Port=5432;Database=vortex;Username=vortex;Password=${APP_POSTGRES_PASSWORD}
+      Identity__Authority: https://${AUTHENTIK_DOMAIN}/application/o/${VORTEX_OIDC_PROVIDER_SLUG}/
+      Identity__MetadataAddress: http://authentik-server:9000/application/o/${VORTEX_OIDC_PROVIDER_SLUG}/.well-known/openid-configuration
+      Identity__ExternalIssuer: https://${AUTHENTIK_DOMAIN}/application/o/${VORTEX_OIDC_PROVIDER_SLUG}/
+      Identity__ApiAudience: ${VORTEX_API_AUDIENCE}
+      Identity__RolesClaimType: ${VORTEX_OIDC_ROLES_CLAIM:-roles}
+      Identity__AdministratorRole: ${VORTEX_ADMINISTRATOR_ROLE:-platform-admin}
+      Cors__AllowedOrigins__0: https://${APP_DOMAIN}
+
+  app-postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vortex
+      POSTGRES_USER: vortex
+      POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD:?Set APP_POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - app-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vortex -d vortex"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  authentik-postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:?Set AUTHENTIK_POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - authentik-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  authentik-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - authentik-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: server
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?Set AUTHENTIK_SECRET_KEY in .env.production}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik-media:/media
+      - ./infrastructure/authentik/custom-templates:/templates
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: worker
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?Set AUTHENTIK_SECRET_KEY in .env.production}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik-media:/media
+      - ./infrastructure/authentik/custom-templates:/templates
+
+volumes:
+  caddy-data:
+  caddy-config:
+  app-postgresql-data:
+  authentik-postgresql-data:
+  authentik-redis-data:
+  authentik-media:

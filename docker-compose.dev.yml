@@ -1,0 +1,158 @@
+# Vortex – Local Development Stack
+# Usage:  docker compose -f docker-compose.dev.yml up --build
+#
+# Everything on ONE port — no CORS issues:
+#   http://localhost:3000          → React UI
+#   http://localhost:3000/api/     → .NET API (proxied)
+#   http://localhost:3000/application/  → Authentik OIDC (proxied)
+#   http://localhost:3000/if/      → Authentik login UI (proxied)
+#
+# Direct access (for debugging):
+#   http://localhost:5000          → API direct
+#   http://localhost:9000          → Authentik admin direct
+
+services:
+  # ─── Nginx Gateway (unified reverse proxy) ────────────────────
+  web:
+    build:
+      context: ./src/Vortex.Web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:8080"
+    volumes:
+      - ./infrastructure/dev/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      VORTEX_API_URL: ""
+      VORTEX_OIDC_AUTHORITY: http://localhost:3000/application/o/vortex-portal/
+      VORTEX_OIDC_CLIENT_ID: ${VORTEX_OIDC_CLIENT_ID:-kcTkisBmdXcInUHLF3nYFfjyn9o5frSt4tJRMnsW}
+      VORTEX_OIDC_SCOPE: ${VORTEX_OIDC_SCOPE:-openid profile email vortex-api}
+      VORTEX_OIDC_ROLES_CLAIM: ${VORTEX_OIDC_ROLES_CLAIM:-roles}
+
+  # ─── Vortex API (.NET 8) ──────────────────────────────────────
+  api:
+    build:
+      context: ./src/Vortex.Api
+    restart: unless-stopped
+    depends_on:
+      app-postgresql:
+        condition: service_healthy
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Postgres: Host=app-postgresql;Port=5432;Database=vortex;Username=vortex;Password=vortex
+      Identity__Authority: http://authentik-server:9000/application/o/vortex-portal/
+      Identity__MetadataAddress: http://authentik-server:9000/application/o/vortex-portal/.well-known/openid-configuration
+      Identity__ExternalIssuer: http://localhost:3000/application/o/vortex-portal/
+      Identity__ApiAudience: ${VORTEX_OIDC_CLIENT_ID:-kcTkisBmdXcInUHLF3nYFfjyn9o5frSt4tJRMnsW}
+      Identity__RolesClaimType: roles
+      Identity__AdministratorRole: platform-admin
+      Identity__RequireHttpsMetadata: "false"
+      Cors__AllowedOrigins__0: http://localhost:3000
+
+  # ─── Vortex PostgreSQL ────────────────────────────────────────
+  app-postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vortex
+      POSTGRES_USER: vortex
+      POSTGRES_PASSWORD: vortex
+    volumes:
+      - app-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vortex -d vortex"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Authentik PostgreSQL (reuses existing data) ──────────────
+  authentik-postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASS:-8hNwWWbXg2tr2NLhkDqZCxFfIBm3tPZ4rQmSTWDuW3eNXVp8}
+    volumes:
+      - authentik-postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Authentik Redis ──────────────────────────────────────────
+  authentik-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - authentik-redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Authentik Server ─────────────────────────────────────────
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: server
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-XMts9OI2q7c0IbNfZc4lM0jZJSqajDhEqPEv3B3VF1L9sbQByDYvkSuPfx2CRBTBKuEuq9uUlJBEihHh}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASS:-8hNwWWbXg2tr2NLhkDqZCxFfIBm3tPZ4rQmSTWDuW3eNXVp8}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "0.0.0.0/0,::/0"
+    volumes:
+      - authentik-media:/media
+      - ./infrastructure/authentik/custom-templates:/templates
+
+  # ─── Authentik Worker ─────────────────────────────────────────
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: worker
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-XMts9OI2q7c0IbNfZc4lM0jZJSqajDhEqPEv3B3VF1L9sbQByDYvkSuPfx2CRBTBKuEuq9uUlJBEihHh}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASS:-8hNwWWbXg2tr2NLhkDqZCxFfIBm3tPZ4rQmSTWDuW3eNXVp8}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik-media:/media
+      - ./infrastructure/authentik/custom-templates:/templates
+
+volumes:
+  app-postgresql-data:
+  # Reuse existing Authentik volumes from infrastructure/authentik setup
+  authentik-postgresql:
+    external: true
+    name: authentik_authentik-postgresql
+  authentik-redis:
+    external: true
+    name: authentik_authentik-redis
+  authentik-media:
+    external: true
+    name: authentik_authentik-media
