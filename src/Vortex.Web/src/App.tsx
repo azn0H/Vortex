@@ -81,7 +81,10 @@ export function App() {
     return <SignIn />;
   }
 
-  const isAdministrator = profile?.roles.includes(administratorRole) ?? false;
+  const isAdministrator = profile?.roles.some(role =>
+    role.toLowerCase() === administratorRole.toLowerCase() ||
+    role.toLowerCase() === "authentik admins"
+  ) ?? false;
 
   return (
     <main className="min-h-screen bg-[#0e0f12] text-slate-100">

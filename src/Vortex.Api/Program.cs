@@ -114,7 +114,8 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
         .RequireAuthenticatedUser()
         .Build();
-    options.AddPolicy("PlatformAdministrator", policy => policy.RequireRole(administratorRole));
+    options.AddPolicy("PlatformAdministrator", policy =>
+        policy.RequireAssertion(ctx => ctx.User.Claims.Any(c => c.Type == ClaimTypes.Role && IsAdminRole(c.Value))));
 });
 
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, ApplicationAccessPolicyProvider>();
@@ -173,7 +174,7 @@ app.MapGet("/api/apps", async (ClaimsPrincipal user, AppDbContext dbContext) =>
 {
     var subject = user.FindFirstValue("sub");
     var roles = user.FindAll(ClaimTypes.Role).Select(x => x.Value).Distinct().ToArray();
-    var isAdministrator = roles.Contains(administratorRole, StringComparer.Ordinal);
+    var isAdministrator = roles.Any(IsAdminRole);
 
     var applications = await dbContext.ClientApplications
         .AsNoTracking()
@@ -476,7 +477,7 @@ app.MapGet("/api/admin/user-matrix", async (ClaimsPrincipal user, AppDbContext d
         var name = lastLog?.UserName ?? (subj == currentSub ? currentName : subj);
         var roles = lastLog?.Roles ?? (subj == currentSub ? currentRoles : Array.Empty<string>());
         var lastActiveAt = lastLog?.Timestamp ?? DateTimeOffset.UtcNow;
-        var isAdministrator = roles.Contains(administratorRole, StringComparer.Ordinal);
+        var isAdministrator = roles.Any(IsAdminRole);
 
         var accessibleApps = allApps
             .Where(x => isAdministrator ||
@@ -525,3 +526,8 @@ static IEnumerable<string> ExpandRoles(string value)
 
     return JsonSerializer.Deserialize<string[]>(value) ?? [];
 }
+
+bool IsAdminRole(string role) =>
+    string.Equals(role, administratorRole, StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(role, "platform-admin", StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(role, "authentik Admins", StringComparison.OrdinalIgnoreCase);
