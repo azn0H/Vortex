@@ -91,7 +91,10 @@ builder.Services
                     return Task.CompletedTask;
                 }
 
-                var roles = context.Principal.FindAll(rolesClaimType)
+                var roleClaimNames = new[] { rolesClaimType, "roles", "role", "groups", "ak_groups", ClaimTypes.Role };
+
+                var roles = context.Principal.Claims
+                    .Where(c => roleClaimNames.Contains(c.Type, StringComparer.OrdinalIgnoreCase))
                     .SelectMany(claim => ExpandRoles(claim.Value))
                     .Distinct(StringComparer.Ordinal)
                     .ToList();
