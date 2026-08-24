@@ -40,9 +40,7 @@ builder.Services
     {
         var authority = builder.Configuration["Identity:Authority"];
         var metadataAddress = builder.Configuration["Identity:MetadataAddress"];
-
         options.Authority = authority;
-        options.Audience = builder.Configuration["Identity:ApiAudience"];
         options.MapInboundClaims = false;
         options.RequireHttpsMetadata = bool.TryParse(builder.Configuration["Identity:RequireHttpsMetadata"], out var https) && https;
 
@@ -64,11 +62,18 @@ builder.Services
             validIssuers.Add(extraIssuer.TrimEnd('/') + "/");
         }
 
+        var validAudiences = new List<string>();
+        var apiAudience = builder.Configuration["Identity:ApiAudience"];
+        var clientId = builder.Configuration["Identity:ClientId"];
+        if (!string.IsNullOrEmpty(apiAudience)) validAudiences.Add(apiAudience);
+        if (!string.IsNullOrEmpty(clientId) && !validAudiences.Contains(clientId)) validAudiences.Add(clientId);
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidIssuers = validIssuers.Count > 0 ? validIssuers : null,
-            ValidateAudience = true,
+            ValidateAudience = validAudiences.Count > 0,
+            ValidAudiences = validAudiences.Count > 0 ? validAudiences : null,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             NameClaimType = "name",

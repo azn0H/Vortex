@@ -41,6 +41,7 @@ services:
       Identity__MetadataAddress: http://authentik-server:9000/application/o/${VORTEX_OIDC_PROVIDER_SLUG}/.well-known/openid-configuration
       Identity__ExternalIssuer: https://${AUTHENTIK_DOMAIN}/application/o/${VORTEX_OIDC_PROVIDER_SLUG}/
       Identity__ApiAudience: ${VORTEX_API_AUDIENCE}
+      Identity__ClientId: ${VORTEX_OIDC_CLIENT_ID}
       Identity__RolesClaimType: ${VORTEX_OIDC_ROLES_CLAIM:-roles}
       Identity__AdministratorRole: ${VORTEX_ADMINISTRATOR_ROLE:-platform-admin}
       Cors__AllowedOrigins__0: https://${APP_DOMAIN}
