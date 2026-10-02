@@ -44,7 +44,7 @@ public sealed class ApplicationAccessHandler(
             .ToArray();
         var administratorRole = configuration["Identity:AdministratorRole"] ?? "platform-admin";
 
-        if (roles.Contains(administratorRole, StringComparer.Ordinal))
+        if (roles.Any(role => AdministratorRoles.Matches(role, administratorRole)))
         {
             context.Succeed(requirement);
             return;

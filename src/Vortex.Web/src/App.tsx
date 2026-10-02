@@ -108,7 +108,9 @@ export function App() {
               <p className="text-xs font-semibold text-slate-200">{profile?.name ?? profile?.subject ?? "Uživatel"}</p>
               <p className="text-[11px] font-mono-code text-slate-400">{profile?.roles.length ?? 0} přiřazených rolí</p>
             </div>
-            <button className="button-secondary" onClick={() => void signOut()}>
+            <button className="button-secondary" onClick={() => void signOut().catch(() => {
+              setError("Odhlášení u poskytovatele identity se nezdařilo. Pro ukončení SSO relace se odhlaste přímo v Authentiku.");
+            })}>
               Odhlásit se
             </button>
           </div>
@@ -742,13 +744,14 @@ function IntegrationGuideModal({ appKey, onClose }: { appKey: string; onClose: (
               Pokud tvoříte backendové API a chcete ověřit, zda má daný uživatel (s jeho access tokenem) právo přistoupit k této aplikaci:
             </p>
             <div className="bg-[#0e0f12] border border-slate-800 rounded-lg p-4 font-mono-code text-xs leading-relaxed">
-              <span className="text-emerald-400 font-bold">GET</span> {window.__VORTEX_CONFIG__?.apiUrl || window.location.origin}/api/apps/<span className="text-emerald-300">{appKey}</span>/launch<br/>
+              <span className="text-emerald-400 font-bold">POST</span> {window.__VORTEX_CONFIG__?.apiUrl || window.location.origin}/api/apps/<span className="text-emerald-300">{appKey}</span>/launch<br/>
               <span className="text-slate-500">Authorization:</span> Bearer &lt;access_token&gt;
             </div>
             <ul className="list-disc pl-5 text-xs text-slate-400 space-y-1">
               <li><strong className="text-emerald-400">200 OK</strong> – Uživatel má povolený přístup (zapsáno do auditu).</li>
               <li><strong className="text-rose-400">403 Forbidden</strong> – Přístup odepřen.</li>
               <li><strong className="text-rose-400">401 Unauthorized</strong> – Neplatný token.</li>
+              <li><strong className="text-rose-400">404 Not Found</strong> – Aplikace neexistuje nebo je vypnutá.</li>
             </ul>
           </div>
 

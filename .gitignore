@@ -8,3 +8,4 @@
 
 
 !.env.production.example
+!.env.dev.example
