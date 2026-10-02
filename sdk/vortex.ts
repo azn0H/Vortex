@@ -29,8 +29,8 @@ export class VortexClient {
    */
   async authorize(appKey: string, accessToken: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/apps/${appKey}/launch`, {
-        method: "GET",
+      const response = await fetch(`${this.apiUrl}/api/apps/${encodeURIComponent(appKey)}/launch`, {
+        method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Accept": "application/json"

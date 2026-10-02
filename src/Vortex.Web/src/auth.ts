@@ -37,9 +37,14 @@ export async function completeSilentSignIn(): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
-  await userManager.removeUser();
-  await userManager.clearStaleState();
-  window.location.assign(window.location.origin);
+  userManager.stopSilentRenew();
+  try {
+    // The manager reads the stored ID token before clearing local state.
+    await userManager.signoutRedirect();
+  } catch (error) {
+    await userManager.removeUser();
+    throw error;
+  }
 }
 
 export function rolesFromUser(user: User | null): string[] {

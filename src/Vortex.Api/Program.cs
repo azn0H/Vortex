@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using Vortex.Api.Authorization;
 using Vortex.Api.Contracts;
 using Vortex.Api.Domain;
+using Vortex.Api.Endpoints;
 using Vortex.Api.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,12 +20,7 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownNetworks.Clear();
-    options.KnownProxies.Clear();
-});
+builder.Services.Configure<ForwardedHeadersOptions>(options => ProxyTrust.Configure(options, builder.Configuration));
 
 builder.Services.AddCors(options =>
 {
@@ -410,31 +406,7 @@ admin.MapDelete("/{appKey}/roles/{role}", async (string appKey, string role, App
     return deleted == 0 ? Results.NotFound() : Results.NoContent();
 });
 
-app.MapPost("/api/apps/{key}/launch", async (string key, ClaimsPrincipal user, HttpContext httpContext, AppDbContext dbContext) =>
-{
-    var subject = user.FindFirstValue("sub");
-    if (string.IsNullOrEmpty(subject)) return Results.Unauthorized();
-
-    var app = await dbContext.ClientApplications.FirstOrDefaultAsync(x => x.Key == key.ToLower());
-    var userName = user.Identity?.Name;
-    var roles = user.FindAll(ClaimTypes.Role).Select(x => x.Value).Distinct().ToArray();
-    var ip = httpContext.Connection.RemoteIpAddress?.ToString();
-
-    dbContext.UserAccessLogs.Add(new UserAccessLog
-    {
-        Subject = subject,
-        UserName = userName,
-        ApplicationKey = app?.Key ?? key,
-        ApplicationName = app?.DisplayName ?? key,
-        Action = "Spuštění aplikace",
-        Roles = roles,
-        IpAddress = ip,
-        Timestamp = DateTimeOffset.UtcNow
-    });
-
-    await dbContext.SaveChangesAsync();
-    return Results.Ok(new { status = "logged" });
-});
+app.MapPost("/api/apps/{key}/launch", ApplicationLaunch.HandleAsync);
 
 app.MapGet("/api/admin/audit", async (AppDbContext dbContext) =>
 {
@@ -530,7 +502,4 @@ static IEnumerable<string> ExpandRoles(string value)
     return JsonSerializer.Deserialize<string[]>(value) ?? [];
 }
 
-bool IsAdminRole(string role) =>
-    string.Equals(role, administratorRole, StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(role, "platform-admin", StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(role, "authentik Admins", StringComparison.OrdinalIgnoreCase);
+bool IsAdminRole(string role) => AdministratorRoles.Matches(role, administratorRole);

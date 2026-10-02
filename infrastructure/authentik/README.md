@@ -17,6 +17,8 @@ http://localhost:5173/auth/silent
 
 Set the provider's issuer to `http://localhost:9000/application/o/vortex/` and use the same authority in both application configurations. Add the resulting OAuth client ID to the portal `.env` file. Configure an Authentik scope mapping that emits a `roles` claim, and grant `platform-admin` to access administrators.
 
+Register `http://localhost:5173` as a post-logout redirect URI (`http://localhost:3000` for the unified development stack). Bind a [User Logout stage](https://docs.goauthentik.io/add-secure-apps/flows-stages/stages/user_logout/) to the provider invalidation flow so logout ends the main Authentik session as well as the application's session. In production register the HTTPS portal origin. Verify logout and a fresh sign-in on the actual provider after deployment.
+
 Use these local development settings after the provider is created:
 
 ```text

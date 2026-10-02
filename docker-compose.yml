@@ -17,6 +17,9 @@ services:
       - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      default:
+        ipv4_address: 172.30.240.2
 
   web:
     build:
@@ -45,6 +48,7 @@ services:
       Identity__RolesClaimType: ${VORTEX_OIDC_ROLES_CLAIM:-roles}
       Identity__AdministratorRole: ${VORTEX_ADMINISTRATOR_ROLE:-platform-admin}
       Cors__AllowedOrigins__0: https://${APP_DOMAIN}
+      ReverseProxy__KnownProxies__0: 172.30.240.2
 
   app-postgresql:
     image: postgres:16-alpine
@@ -129,6 +133,13 @@ services:
     volumes:
       - authentik-media:/media
       - ./infrastructure/authentik/custom-templates:/templates
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
+          ip_range: 172.30.240.128/25
 
 volumes:
   caddy-data:
