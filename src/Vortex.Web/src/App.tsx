@@ -55,7 +55,7 @@ function Brand({ onClick }: { onClick?: () => void }) {
   const content = (
     <>
       <span className="brand-word">Vortex</span>
-      <span className="brand-manager">ve správě Metafra</span>
+      <span className="brand-manager">By Metafra</span>
     </>
   );
   return onClick ? (
@@ -76,9 +76,9 @@ function Footer() {
   return (
     <footer className="site-footer">
       <span>
-        Vortex / <strong>Metafra</strong>
+        Vortex
       </span>
-      <span>Jedno místo pro vaše aplikace.</span>
+      <span>web by <a href="https://aznoh.cz">aznoh.cz</a></span>
     </footer>
   );
 }
@@ -111,16 +111,9 @@ function Poster() {
           Váš vstup
           <br /> k práci.
         </h2>
-        <p>
-          Všechny firemní aplikace.
-          <br />
-          Jedno místo, jeden účet.
-        </p>
       </div>
       <span className="poster-signature">
-        Vortex Access
-        <br />
-        Spravuje Metafra
+        Vortex
       </span>
     </aside>
   );
@@ -308,12 +301,9 @@ function SignIn({ error }: { error: string | null }) {
       <main className="portal-layout signin-layout">
         <Poster />
         <section className="signin-content">
-          <span className="eyebrow">Pracovní prostor</span>
+          <span className="eyebrow">SSO</span>
           <h1>Přihlášení.</h1>
-          <p className="signin-description">
-            Vaše aplikace začínají tady.
-            <br />
-            Pokračujte se svým firemním účtem.
+            Pokračujte se svým účtem.
           </p>
           <ErrorNotice message={signInError ?? error} />
           <button
