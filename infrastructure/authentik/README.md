@@ -51,3 +51,7 @@ On 2026-10-03 the Vortex Portal provider's **Invalidation Flow** was changed fro
 The strict post-logout redirect URI remains `https://sso.aznoh.cz`. **Logout URI** (logout notifications) is empty: Vortex's static frontend does not implement an OIDC back-channel notification endpoint. A portal origin in that field cannot process the signed logout POST. This setting is separate from the post-logout redirect URI. These are Authentik database settings and are not changed by rebuilding Vortex.
 
 The portal's `/api/me` response falls back from an empty `name` claim to `preferred_username`; self-service registration does not collect a separate display name. The same label is used for application-launch audit entries. User identity and access decisions continue to use the subject and roles.
+
+## Czech MFA text and optional persistent sign-in
+
+The missing Czech TOTP strings, optional 90-day sign-in choice, deployment status, and rollback are described in [localization/README.md](localization/README.md). The frontend translation image and Authentik's session-lifetime setting are separate changes; follow the deployment status before assuming either is active.
