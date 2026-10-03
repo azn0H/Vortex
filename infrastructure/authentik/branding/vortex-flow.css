@@ -1,0 +1,345 @@
+/* Vortex typographic portal — Authentik 2026.5 flow pages.
+   Paste into System > Brands > Custom CSS. Authentik injects this stylesheet
+   into component shadow roots. Scope rules to flow hosts; do not restyle admin.
+   No JavaScript, remote fonts, credentials, or changes to authentication. */
+
+ak-flow-executor,
+:host(ak-flow-executor) {
+  --vortex-paper: #f4f2ee;
+  --vortex-ink: #24231f;
+  --vortex-muted: #68655f;
+  --vortex-line: #d6d0c7;
+  --vortex-accent: #b0442d;
+  --vortex-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --pf-global--FontFamily--text: var(--vortex-font);
+  --pf-global--FontFamily--heading: var(--vortex-font);
+  --pf-global--Color--100: var(--vortex-ink);
+  --pf-global--Color--200: var(--vortex-muted);
+  --pf-global--BackgroundColor--100: var(--vortex-paper);
+  --pf-global--primary-color--100: var(--vortex-accent);
+  --pf-global--primary-color--200: #943723;
+  --pf-global--link--Color: var(--vortex-accent);
+  --pf-global--link--Color--hover: #943723;
+  --pf-global--BorderColor--100: var(--vortex-line);
+  color-scheme: light;
+  color: var(--vortex-ink);
+  font-family: var(--vortex-font);
+  background: var(--vortex-paper) !important;
+  background-image: none !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 36fr) minmax(0, 64fr) !important;
+  grid-template-rows: 102px minmax(440px, 1fr) auto !important;
+  grid-template-areas: "masthead masthead" "poster main" "footer footer" !important;
+  gap: 0 !important;
+  align-content: stretch !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  min-width: 0;
+  max-width: none !important;
+  min-height: 100svh;
+  position: relative;
+  overflow: visible !important;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A decorative poster follows the portal's existing wording. */
+ak-flow-executor.pf-c-login::before,
+:host(ak-flow-executor.pf-c-login)::before {
+  content: "Váš vstup\A k práci." !important;
+  white-space: pre-line;
+  position: static !important;
+  grid-area: poster !important;
+  width: auto !important;
+  height: auto !important;
+  z-index: auto !important;
+  filter: none !important;
+  padding: 48px 33px;
+  background: var(--vortex-accent) !important;
+  color: #fff;
+  font-family: var(--vortex-font);
+  font-size: clamp(48px, 5.4vw, 82px);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 0.99;
+  box-sizing: border-box;
+}
+
+:host(ak-flow-executor) .pf-c-login__header {
+  grid-area: masthead;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 27px 36px;
+  margin: 0;
+  border-bottom: 1px solid var(--vortex-line);
+}
+
+:host(ak-flow-executor) .pf-c-login__header::before {
+  content: "VORTEX";
+  color: var(--vortex-ink);
+  font-size: 25px;
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -1.1px;
+}
+
+:host(ak-flow-executor) .pf-c-login__header::after {
+  content: "BY METAFRA";
+  color: var(--vortex-muted);
+  font-size: 10px;
+  letter-spacing: 0.055em;
+  margin-top: 10px;
+}
+
+:host(ak-flow-executor) ak-flow-inspector-button {
+  position: absolute;
+  right: 180px;
+  top: 32px;
+}
+
+ak-flow-executor::part(locale-select),
+:host(ak-flow-executor) ak-locale-select {
+  position: absolute;
+  top: 34px;
+  right: 36px;
+  left: auto !important;
+  width: 140px;
+  color: var(--vortex-muted);
+  background: transparent;
+  z-index: 2;
+}
+
+ak-flow-executor::part(locale-select-label),
+ak-flow-executor::part(locale-select-select) {
+  color: #68655f !important;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+}
+
+ak-flow-executor::part(locale-select-select) {
+  width: 110px;
+  max-width: 110px;
+  opacity: 1 !important;
+  border: 0;
+}
+
+ak-flow-executor::part(locale-select-label) {
+  flex: 0 0 20px;
+  width: 20px;
+}
+
+:host(ak-flow-executor) .pf-c-login__main {
+  grid-area: main;
+  align-self: center;
+  justify-self: center;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  margin: 0;
+  padding: 60px 55px;
+  background: transparent !important;
+  color: var(--vortex-ink);
+  box-shadow: none !important;
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+}
+
+/* The wordmark is in the masthead, rather than above every authentication step. */
+:host(ak-flow-executor) [part="branding"] {
+  display: none;
+}
+
+:host(ak-flow-card) {
+  font-family: var(--vortex-font);
+  color: var(--vortex-ink);
+  background: transparent;
+  --pf-c-title--m-3xl--FontSize: clamp(36px, 4vw, 55px);
+}
+
+:host(ak-flow-card) .pf-c-login__main-header,
+:host(ak-flow-card) .pf-c-login__main-body {
+  padding: 0;
+  background: transparent;
+  color: var(--vortex-ink);
+}
+
+:host(ak-flow-card) .pf-c-login__main-header {
+  margin-bottom: 30px;
+}
+
+:host(ak-flow-card) h1.pf-c-title {
+  color: var(--vortex-ink);
+  font-family: var(--vortex-font);
+  font-size: clamp(36px, 4vw, 55px) !important;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+:host(ak-flow-card) p {
+  color: var(--vortex-muted);
+  font-family: var(--vortex-font);
+  line-height: 1.7;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) {
+  font-family: var(--vortex-font);
+  color: var(--vortex-ink);
+  --pf-c-form-control--BackgroundColor: transparent;
+  --pf-c-form-control--Color: var(--vortex-ink);
+  --pf-c-form-control--BorderBottomColor: var(--vortex-line);
+  --pf-c-form-control--focus--BorderBottomColor: var(--vortex-accent);
+  --pf-c-form-control--focus--BorderBottomWidth: 2px;
+  --pf-c-button--m-primary--BackgroundColor: var(--vortex-accent);
+  --pf-c-button--m-primary--hover--BackgroundColor: #943723;
+  --pf-c-button--m-primary--Color: #fff;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form {
+  gap: 26px;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form__label,
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form__label-text {
+  font-family: var(--vortex-font);
+  color: var(--vortex-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form-control {
+  color: var(--vortex-ink) !important;
+  background: transparent !important;
+  border: 0;
+  border-bottom: 1px solid var(--vortex-line);
+  border-radius: 0;
+  padding: 12px 0;
+  height: auto;
+  min-height: 46px;
+  font-family: var(--vortex-font);
+  font-size: 16px;
+  box-shadow: none;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form-control::placeholder {
+  color: var(--vortex-muted);
+  opacity: 0.85;
+  font-style: normal;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form-control:focus {
+  border-bottom: 2px solid var(--vortex-accent);
+  outline: 2px solid var(--vortex-accent);
+  outline-offset: 5px;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-form-control[aria-invalid="true"] {
+  border-bottom-color: #922c22;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button.pf-m-primary {
+  background: var(--vortex-accent) !important;
+  color: #fff !important;
+  border: 0;
+  border-radius: 0;
+  padding: 16px 21px;
+  min-height: 50px;
+  font-family: var(--vortex-font);
+  font-size: 13px;
+  font-weight: 400;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button.pf-m-primary:hover:not(:disabled) {
+  background: #943723 !important;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button.pf-m-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button:focus-visible {
+  outline: 2px solid var(--vortex-accent);
+  outline-offset: 5px;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button:disabled {
+  opacity: 0.55;
+}
+
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) a,
+:host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button.pf-m-link {
+  color: var(--vortex-accent);
+}
+
+:host(ak-flow-executor) .pf-c-login__footer {
+  grid-area: footer;
+  margin: 0;
+  padding: 24px 36px;
+  background: var(--vortex-paper);
+  color: var(--vortex-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: right;
+  font-size: 11px;
+  --pf-global--Color--light-100: var(--vortex-muted);
+  --pf-global--Color--light-200: var(--vortex-muted);
+}
+
+:host(ak-flow-executor) .pf-c-login__footer::before {
+  content: "Vortex / Metafra";
+  float: left;
+  color: var(--vortex-ink);
+}
+
+@media (max-width: 760px) {
+  ak-flow-executor,
+  :host(ak-flow-executor) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 88px auto minmax(360px, 1fr) auto !important;
+    grid-template-areas: "masthead" "poster" "main" "footer" !important;
+  }
+  :host(ak-flow-executor) .pf-c-login__header {
+    padding: 22px 25px;
+  }
+  ak-flow-executor.pf-c-login::before,
+  :host(ak-flow-executor.pf-c-login)::before {
+    padding: 30px 25px;
+    font-size: 48px;
+  }
+  ak-flow-executor::part(locale-select),
+  :host(ak-flow-executor) ak-locale-select {
+    right: 25px;
+    top: 29px;
+  }
+  :host(ak-flow-executor) ak-flow-inspector-button {
+    top: 28px;
+    right: 145px;
+  }
+  :host(ak-flow-executor) .pf-c-login__main {
+    padding: 45px 25px;
+    align-self: start;
+  }
+  :host(ak-flow-card) h1.pf-c-title {
+    font-size: 40px !important;
+  }
+  :host(ak-flow-executor) .pf-c-login__footer {
+    padding: 22px 25px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host(:is([part="challenge"], ak-stage-authenticator-validate-code)) .pf-c-button {
+    transition: none;
+    transform: none !important;
+  }
+}

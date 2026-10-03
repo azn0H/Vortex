@@ -1,32 +1,48 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api } from "./api";
 import { beginSignIn, getActiveUser, signOut } from "./auth";
-import type { Application, ApplicationDetail, Profile, UserAccessLog, UserAccessMatrixItem } from "./types";
+import type {
+  Application,
+  ApplicationDetail,
+  Profile,
+  UserAccessLog,
+  UserAccessMatrixItem,
+} from "./types";
 
-const administratorRole = "platform-admin";
+type View = "portal" | "admin" | "audit";
+type NewApplication = {
+  key: string;
+  displayName: string;
+  launchUrl: string;
+  accessMode: number;
+};
+const isRestricted = (mode: Application["accessMode"]) =>
+  mode === 1 || mode === "Restricted";
+const messageFrom = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
 
-function accessModeLabel(mode: Application["accessMode"]): string {
-  return mode === 1 || mode === "Restricted" ? "Omezená" : "Veřejná";
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("cs-CZ", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 }
 
-function formatDate(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleString("cs-CZ", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
-  } catch {
-    return isoString;
-  }
-}
-
-function generateSlug(text: string): string {
-  return text
+function generateSlug(value: string): string {
+  return value
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -35,662 +51,965 @@ function generateSlug(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function Brand({ onClick }: { onClick?: () => void }) {
+  const content = (
+    <>
+      <span className="brand-word">Vortex</span>
+      <span className="brand-manager">By Metafra</span>
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      className="brand"
+      onClick={onClick}
+      aria-label="Vortex — moje aplikace"
+    >
+      {content}
+    </button>
+  ) : (
+    <div className="brand">{content}</div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="site-footer">
+      <span>
+        Vortex
+      </span>
+      <span>web by <a href="https://aznoh.cz">aznoh.cz</a></span>
+    </footer>
+  );
+}
+
+function ErrorNotice({
+  message,
+  onDismiss,
+}: {
+  message: string | null;
+  onDismiss?: () => void;
+}) {
+  if (!message) return null;
+  return (
+    <div className="error-notice" role="alert">
+      <span>{message}</span>
+      {onDismiss && (
+        <button type="button" onClick={onDismiss}>
+          Zavřít
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Poster() {
+  return (
+    <aside className="portal-poster" aria-label="Vortex — váš vstup k práci">
+      <div>
+        <h2>
+          Váš vstup
+          <br /> k práci.
+        </h2>
+      </div>
+      <span className="poster-signature">
+        Vortex
+      </span>
+    </aside>
+  );
+}
+
 export function App() {
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [activeView, setActiveView] = useState<"portal" | "admin">("portal");
+  const [activeView, setActiveView] = useState<View>("portal");
   const [error, setError] = useState<string | null>(null);
-
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const loadPortal = useCallback(async () => {
-    const [nextProfile, nextApplications] = await Promise.all([api.me(), api.applications()]);
+    const [nextProfile, nextApplications] = await Promise.all([
+      api.me(),
+      api.applications(),
+    ]);
     setProfile(nextProfile);
     setApplications(nextApplications);
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     void (async () => {
       try {
         const user = await getActiveUser();
+        if (disposed) return;
         setIsAuthenticated(user !== null);
-
-        if (user) {
-          await loadPortal();
-        }
+        if (user) await loadPortal();
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "Nespravilo sa načítanie vášho pracovného priestoru.");
+        if (!disposed)
+          setError(
+            messageFrom(reason, "Pracovní prostor se nepodařilo načíst."),
+          );
       } finally {
-        setIsReady(true);
+        if (!disposed) setIsReady(true);
       }
     })();
+    return () => {
+      disposed = true;
+    };
   }, [loadPortal]);
 
-  if (!isReady) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[#0e0f12] text-slate-400">
-        <div className="flex items-center gap-3 font-mono-code text-xs">
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-ping" />
-          Načítání portálu Vortex...
-        </div>
-      </main>
-    );
+  function navigate(view: View) {
+    setActiveView(view);
+    setError(null);
+    if (view === "portal")
+      void loadPortal().catch((reason) =>
+        setError(messageFrom(reason, "Aplikace se nepodařilo načíst.")),
+      );
   }
-
-  if (!isAuthenticated) {
-    return <SignIn />;
-  }
-
-  const isAdministrator = profile?.roles.some(role =>
-    role.toLowerCase() === administratorRole.toLowerCase() ||
-    role.toLowerCase() === "authentik admins"
-  ) ?? false;
-
-  return (
-    <main className="min-h-screen bg-[#0e0f12] text-slate-100">
-      {/* Swiss Minimal Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-[#0e0f12]/95 px-6 py-3.5 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-5">
-          <button className="flex items-center gap-2.5 text-left group" onClick={() => setActiveView("portal")}>
-            <div className="grid h-7 w-7 place-items-center rounded border border-slate-700 bg-slate-800 font-mono-code font-bold text-xs text-white">
-              V
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold tracking-tight text-sm text-slate-100">VORTEX</span>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" title="Aktivní relace" />
-              </div>
-            </div>
-          </button>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden text-right sm:block">
-              <p className="text-xs font-semibold text-slate-200">{profile?.name ?? profile?.subject ?? "Uživatel"}</p>
-              <p className="text-[11px] font-mono-code text-slate-400">{profile?.roles.length ?? 0} přiřazených rolí</p>
-            </div>
-            <button className="button-secondary" onClick={() => void signOut().catch(() => {
-              setError("Odhlášení u poskytovatele identity se nezdařilo. Pro ukončení SSO relace se odhlaste přímo v Authentiku.");
-            })}>
-              Odhlásit se
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <section className="mx-auto max-w-6xl px-6 py-8">
-        <nav className="mb-6 flex items-center justify-between border-b border-slate-800/80 pb-3">
-          <div className="flex gap-1.5">
-            <button
-              className={activeView === "portal" ? "tab tab-active" : "tab"}
-              onClick={() => setActiveView("portal")}
-            >
-              Moje aplikace
-            </button>
-            {isAdministrator && (
-              <button
-                className={activeView === "admin" ? "tab tab-active" : "tab"}
-                onClick={() => setActiveView("admin")}
-              >
-                Administrace
-              </button>
-            )}
-          </div>
-
-          <div className="hidden items-center gap-2 font-mono-code text-[11px] text-slate-400 md:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            OIDC / PKCE Relace
-          </div>
-        </nav>
-
-        {error && (
-          <div className="mb-6 flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-200">
-            <span>{error}</span>
-            <button className="font-mono-code text-[11px] underline hover:text-white" onClick={() => setError(null)}>Zavřít</button>
-          </div>
-        )}
-
-        {activeView === "portal" && <Portal applications={applications} />}
-        {activeView === "admin" && isAdministrator && <Administration onError={setError} />}
-      </section>
-    </main>
-  );
-}
-
-function SignIn() {
-  return (
-    <main className="grid min-h-screen place-items-center bg-[#0e0f12] px-6 py-12 text-slate-100">
-      <section className="w-full max-w-md rounded-xl border border-slate-800/90 bg-[#14151b] p-8 shadow-xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-8 w-8 place-items-center rounded border border-slate-700 bg-slate-800 font-mono-code font-bold text-xs text-white">
-              V
-            </div>
-            <span className="font-bold text-sm text-white tracking-tight">Vortex Access</span>
-          </div>
-          <span className="rounded border border-slate-800 bg-[#191b22] px-2 py-0.5 font-mono-code text-[10px] text-slate-400">
-            OIDC / PKCE
-          </span>
-        </div>
-        
-        <h1 className="text-xl font-bold text-white tracking-tight">Přihlášení k aplikacím</h1>
-        <p className="mt-2 text-xs leading-relaxed text-slate-400">
-          Jednotné přihlášení (SSO) pro přístup k interním službám a vyhrazeným rozhraním.
-        </p>
-
-        <button className="button-primary mt-8 w-full font-semibold py-2.5" onClick={() => void beginSignIn()}>
-          Pokračovat přes SSO
-        </button>
-
-        <div className="mt-8 border-t border-slate-800/80 pt-4 text-center">
-          <span className="font-mono-code text-[11px] text-slate-500">
-            Authentik & Zitadel Identity Provider
-          </span>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Portal({ applications }: { applications: Application[] }) {
-  const [filter, setFilter] = useState("");
-
-  const filteredApps = applications.filter(
-    (app) =>
-      app.displayName.toLowerCase().includes(filter.toLowerCase()) ||
-      app.key.toLowerCase().includes(filter.toLowerCase())
-  );
-
-  async function handleLaunch(key: string) {
+  async function handleSignOut() {
+    setIsSigningOut(true);
     try {
-      await api.launchApp(key);
-    } catch (e) {
-      console.warn("Could not log application launch", e);
+      await signOut();
+    } catch {
+      setIsAuthenticated(false);
+      setProfile(null);
+      setApplications([]);
+      setError(
+        "Odhlášení u poskytovatele identity se nezdařilo. Pro ukončení SSO relace se odhlaste přímo v Authentiku.",
+      );
+      setIsSigningOut(false);
     }
   }
 
-  return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Vaše aplikace</h1>
-          <p className="text-xs text-slate-400">Seznam dostupných aplikací přiřazených k vašemu účtu</p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <input
-            className="input w-56 font-mono-code text-xs"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filtr název nebo klíč..."
-          />
-          <span className="shrink-0 rounded border border-slate-800 bg-[#16181f] px-2.5 py-1 font-mono-code text-xs text-slate-400">
-            {filteredApps.length} / {applications.length}
-          </span>
-        </div>
+  if (!isReady)
+    return (
+      <div className="app-shell">
+        <header className="site-header">
+          <Brand />
+        </header>
+        <main className="loading-page" aria-busy="true">
+          <span className="eyebrow">Pracovní prostor</span>
+          <h1>Vortex se připravuje.</h1>
+          <p role="status">Načítání vašich aplikací…</p>
+        </main>
+        <Footer />
       </div>
-
-      {applications.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-800 bg-[#121318] p-10 text-center font-mono-code text-xs text-slate-500">
-          Vašemu účtu zatím nebyly přiřazeny žádné aplikace.
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-800/80 bg-[#14151b]">
-          {/* Table Header */}
-          <div className="grid grid-cols-[1fr_140px_110px] items-center gap-4 border-b border-slate-800/80 px-4 py-2.5 font-mono-code text-[11px] font-semibold text-slate-400">
-            <span>NÁZEV APLIKACE A KLÍČ</span>
-            <span>REŽIM PŘÍSTUPU</span>
-            <span className="text-right">AKCE</span>
-          </div>
-
-          <div className="divide-y divide-slate-800/60">
-            {filteredApps.map((application) => (
-              <div
-                key={application.key}
-                className="grid grid-cols-[1fr_140px_110px] items-center gap-4 px-4 py-3 transition hover:bg-[#181a22]"
+    );
+  if (!isAuthenticated) return <SignIn error={error} />;
+  const isAdministrator =
+    profile?.roles.some((role) =>
+      ["platform-admin", "authentik admins"].includes(role.toLowerCase()),
+    ) ?? false;
+  const name = profile?.name?.trim() || "Uživatel";
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  return (
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Přejít k obsahu
+      </a>
+      <header className="site-header">
+        <Brand onClick={() => navigate("portal")} />
+        <nav className="main-nav" aria-label="Hlavní navigace">
+          <button
+            type="button"
+            aria-current={activeView === "portal" ? "page" : undefined}
+            onClick={() => navigate("portal")}
+          >
+            Aplikace
+          </button>
+          {isAdministrator && (
+            <>
+              <button
+                type="button"
+                aria-current={activeView === "admin" ? "page" : undefined}
+                onClick={() => navigate("admin")}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded border border-slate-800 bg-[#191b22] font-mono-code font-bold text-xs text-slate-300">
-                    {application.displayName.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block truncate font-semibold text-xs text-slate-200">{application.displayName}</span>
-                    <span className="block truncate font-mono-code text-[11px] text-slate-500">{application.key}</span>
-                  </div>
-                </div>
+                Správa
+              </button>
+              <button
+                type="button"
+                aria-current={activeView === "audit" ? "page" : undefined}
+                onClick={() => navigate("audit")}
+              >
+                Aktivita
+              </button>
+            </>
+          )}
+        </nav>
+        <div className="account">
+          <span className="avatar" aria-hidden="true">
+            {initials}
+          </span>
+          <span className="account-name">{name}</span>
+          <button
+            type="button"
+            className="text-button signout-button"
+            onClick={() => void handleSignOut()}
+            disabled={isSigningOut}
+          >
+            {isSigningOut ? "Odhlášení…" : "Odhlásit se"}
+          </button>
+        </div>
+      </header>
+      <ErrorNotice message={error} onDismiss={() => setError(null)} />
+      <main
+        id="main-content"
+        className={
+          activeView === "portal" ? "portal-layout" : "workspace-layout"
+        }
+      >
+        {activeView === "portal" ? (
+          <>
+            <Poster />
+            <Portal applications={applications} onError={setError} />
+          </>
+        ) : (
+          isAdministrator && (
+            <Administration view={activeView} onError={setError} />
+          )
+        )}
+      </main>
+      <Footer />
+    </div>
+  );
+}
 
-                <div>
-                  <span className={accessModeLabel(application.accessMode) === "Veřejná" ? "badge badge-public" : "badge badge-restricted"}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${accessModeLabel(application.accessMode) === "Veřejná" ? "bg-emerald-400" : "bg-amber-400"}`} />
-                    {accessModeLabel(application.accessMode)}
-                  </span>
-                </div>
+function SignIn({ error }: { error: string | null }) {
+  const [isPending, setIsPending] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  async function signIn() {
+    setIsPending(true);
+    setSignInError(null);
+    try {
+      await beginSignIn();
+    } catch {
+      setSignInError("Přihlášení se nepodařilo zahájit. Zkuste to znovu.");
+      setIsPending(false);
+    }
+  }
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <Brand />
+      </header>
+      <main className="portal-layout signin-layout">
+        <Poster />
+        <section className="signin-content">
+          <span className="eyebrow">SSO</span>
+          <h1>Přihlášení.</h1>
+          <p className="signin-description">
+            Pokračujte se svým účtem.
+          </p>
+          <ErrorNotice message={signInError ?? error} />
+          <button
+            type="button"
+            className="button-primary signin-action"
+            onClick={() => void signIn()}
+            disabled={isPending}
+          >
+            {isPending ? "Přesměrování…" : "Pokračovat k přihlášení"}
+            <span aria-hidden="true">↗</span>
+          </button>
+          <p className="signin-footnote">
+            Přístup k aplikacím se řídí oprávněními vašeho účtu.
+          </p>
+        </section>
+      </main>
+      <Footer />
+    </div>
+  );
+}
 
-                <div className="text-right">
-                  <a
-                    className="button-secondary text-[11px] py-1 px-2.5"
-                    href={application.launchUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => void handleLaunch(application.key)}
-                  >
-                    Otevřít
-                    <span className="font-mono-code text-[10px]">→</span>
-                  </a>
-                </div>
-              </div>
-            ))}
-
-            {filteredApps.length === 0 && (
-              <div className="p-6 text-center font-mono-code text-xs text-slate-500">
-                Žádná aplikace neodpovídá zadanému filtru.
-              </div>
+function Portal({
+  applications,
+  onError,
+}: {
+  applications: Application[];
+  onError: (message: string | null) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const filteredApps = applications.filter((app) =>
+    `${app.displayName} ${app.key}`
+      .toLocaleLowerCase("cs")
+      .includes(filter.toLocaleLowerCase("cs")),
+  );
+  async function handleLaunch(key: string) {
+    try {
+      await api.launchApp(key);
+    } catch {
+      onError(
+        "Záznam spuštění se nepodařilo uložit. Přístup k otevřené aplikaci ověřuje její vlastní přihlášení.",
+      );
+    }
+  }
+  return (
+    <section className="portal-content" aria-labelledby="portal-title">
+      <h1 id="portal-title">Moje aplikace</h1>
+      <label className="search-field">
+        <span className="sr-only">Hledat aplikaci podle názvu nebo klíče</span>
+        <input
+          type="search"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Hledat aplikaci"
+        />
+      </label>
+      <div className="list-heading">
+        <span aria-live="polite">
+          Aplikace /{" "}
+          {filter
+            ? `${filteredApps.length} z ${applications.length}`
+            : applications.length}
+        </span>
+        <span>Přístup</span>
+      </div>
+      <div className="application-list">
+        {filteredApps.map((application, index) => (
+          <a
+            className="application-row"
+            key={application.key}
+            href={application.launchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => void handleLaunch(application.key)}
+            aria-label={`Otevřít ${application.displayName} v nové kartě`}
+          >
+            <span className="row-number" aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="row-content">
+              <span className="application-name">
+                {application.displayName}
+              </span>
+              <span className="application-access">
+                {isRestricted(application.accessMode)
+                  ? "Omezený přístup"
+                  : "Všichni přihlášení"}
+              </span>
+            </span>
+            <span className="row-arrow" aria-hidden="true">
+              ↗
+            </span>
+          </a>
+        ))}
+        {filteredApps.length === 0 && (
+          <div className="empty-state">
+            <h2>
+              {applications.length
+                ? "Nic jsme nenašli."
+                : "Prozatím bez aplikací."}
+            </h2>
+            <p>
+              {applications.length
+                ? "Zkuste jiný název nebo klíč aplikace."
+                : "Vašemu účtu zatím nebyly přiřazeny žádné aplikace. Obraťte se na správce."}
+            </p>
+            {filter && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setFilter("")}
+              >
+                Vymazat hledání
+              </button>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }
 
-function Administration({ onError }: { onError: (message: string | null) => void }) {
-  const [adminTab, setAdminTab] = useState<"apps" | "audit">("apps");
+function Administration({
+  view,
+  onError,
+}: {
+  view: "admin" | "audit";
+  onError: (message: string | null) => void;
+}) {
   const [applications, setApplications] = useState<Application[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
-  const [showIntegrationGuide, setShowIntegrationGuide] = useState(false);
-  const [newKey, setNewKey] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newLaunchUrl, setNewLaunchUrl] = useState("");
-  const [newMode, setNewMode] = useState(0);
-  const [subject, setSubject] = useState("");
-  const [role, setRole] = useState("");
-
+  const [isLoadingApps, setIsLoadingApps] = useState(true);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [showIntegration, setShowIntegration] = useState(false);
   const [auditLogs, setAuditLogs] = useState<UserAccessLog[]>([]);
   const [userMatrix, setUserMatrix] = useState<UserAccessMatrixItem[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
-
+  const selectionSequence = useRef(0);
   const refresh = useCallback(async () => {
     const items = await api.adminApplications();
     setApplications(items);
+    return items;
   }, []);
-
+  const select = useCallback(
+    async (key: string) => {
+      const sequence = ++selectionSequence.current;
+      setSelectedKey(key);
+      setDetail(null);
+      setStatus("");
+      setShowIntegration(false);
+      setIsLoadingDetail(true);
+      try {
+        const nextDetail = await api.applicationDetail(key);
+        if (sequence === selectionSequence.current) {
+          setDetail(nextDetail);
+          onError(null);
+        }
+      } catch (reason) {
+        if (sequence === selectionSequence.current)
+          onError(
+            messageFrom(reason, "Nastavení aplikace se nepodařilo načíst."),
+          );
+      } finally {
+        if (sequence === selectionSequence.current) setIsLoadingDetail(false);
+      }
+    },
+    [onError],
+  );
+  useEffect(() => {
+    let disposed = false;
+    void refresh()
+      .then((items) => {
+        if (!disposed && selectionSequence.current === 0 && items[0])
+          void select(items[0].key);
+      })
+      .catch((reason) => {
+        if (!disposed)
+          onError(messageFrom(reason, "Aplikace se nepodařilo načíst."));
+      })
+      .finally(() => {
+        if (!disposed) setIsLoadingApps(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [onError, refresh, select]);
   const refreshAudit = useCallback(async () => {
     setIsLoadingAudit(true);
     try {
-      const [logs, matrix] = await Promise.all([api.adminAuditLogs(), api.adminUserMatrix()]);
+      const [logs, matrix] = await Promise.all([
+        api.adminAuditLogs(),
+        api.adminUserMatrix(),
+      ]);
       setAuditLogs(logs);
       setUserMatrix(matrix);
-    } catch (e) {
-      onError(e instanceof Error ? e.message : "Nespravilo sa načítanie auditu.");
+      onError(null);
+    } catch (reason) {
+      onError(messageFrom(reason, "Aktivitu se nepodařilo načíst."));
     } finally {
       setIsLoadingAudit(false);
     }
   }, [onError]);
-
-  const select = useCallback(async (key: string) => {
-    const nextDetail = await api.applicationDetail(key);
-    setSelectedKey(key);
-    setDetail(nextDetail);
-  }, []);
-
   useEffect(() => {
-    void refresh().catch((reason) => onError(reason instanceof Error ? reason.message : "Nespravilo sa načítanie aplikácií."));
-  }, [onError, refresh]);
+    if (view === "audit") void refreshAudit();
+  }, [view, refreshAudit]);
 
-  const handleNewNameChange = (val: string) => {
-    const oldSlug = generateSlug(newName);
-    setNewName(val);
-    if (!newKey || newKey === oldSlug) {
-      setNewKey(generateSlug(val));
-    }
-  };
-
-  useEffect(() => {
-    if (adminTab === "audit") {
-      void refreshAudit();
-    }
-  }, [adminTab, refreshAudit]);
-
-  async function createApplication(event: FormEvent) {
-    event.preventDefault();
+  async function createApplication(payload: NewApplication) {
     try {
-      const created = await api.createApplication({ key: newKey, displayName: newName, launchUrl: newLaunchUrl, accessMode: newMode });
-      setNewKey("");
-      setNewName("");
-      setNewLaunchUrl("");
+      const created = await api.createApplication(payload);
       await refresh();
       await select(created.key);
-      onError(null);
+      setShowCreate(false);
+      setStatus("Aplikace byla vytvořena.");
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "Nespravilo sa vytvorenie aplikácie.");
+      throw new Error(messageFrom(reason, "Aplikaci se nepodařilo vytvořit."));
     }
   }
-
-  async function deleteApp(key: string) {
-    if (!window.confirm(`Opravdu chcete smazat aplikaci "${key}"?`)) return;
-    try {
-      await api.deleteApplication(key);
-      setSelectedKey(null);
-      setDetail(null);
-      await refresh();
-      onError(null);
-    } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "Nespravilo sa smazání aplikace.");
-    }
-  }
-
   async function saveApplication(event: FormEvent) {
     event.preventDefault();
     if (!detail) return;
+    setIsSaving(true);
+    setStatus("");
     try {
       await api.updateApplication(detail.key, {
         displayName: detail.displayName,
         launchUrl: detail.launchUrl,
-        accessMode: detail.accessMode === "Restricted" || detail.accessMode === 1 ? 1 : 0,
-        isEnabled: detail.isEnabled
+        accessMode: isRestricted(detail.accessMode) ? 1 : 0,
+        isEnabled: detail.isEnabled,
       });
       await refresh();
       await select(detail.key);
-      onError(null);
+      setStatus("Změny byly uloženy.");
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "Nespravilo sa uloženie konfigurácie.");
+      onError(messageFrom(reason, "Změny se nepodařilo uložit."));
+    } finally {
+      setIsSaving(false);
     }
   }
-
-  async function mutate(action: () => Promise<void>) {
-    if (!detail) return;
+  async function deleteApp(key: string) {
+    if (!window.confirm(`Opravdu chcete smazat aplikaci „${key}“?`)) return;
+    setIsSaving(true);
+    try {
+      await api.deleteApplication(key);
+      ++selectionSequence.current;
+      setSelectedKey(null);
+      setDetail(null);
+      const remaining = await refresh();
+      if (remaining[0]) await select(remaining[0].key);
+      setStatus("Aplikace byla smazána.");
+      if (!remaining[0]) onError(null);
+    } catch (reason) {
+      onError(messageFrom(reason, "Aplikaci se nepodařilo smazat."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+  async function mutate(action: () => Promise<void>): Promise<boolean> {
+    if (!detail) return false;
+    setIsSaving(true);
+    setStatus("");
     try {
       await action();
       await select(detail.key);
-      onError(null);
+      setStatus("Oprávnění byla aktualizována.");
+      return true;
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : "Nespravila sa úprava oprávnení.");
+      onError(messageFrom(reason, "Oprávnění se nepodařilo změnit."));
+      return false;
+    } finally {
+      setIsSaving(false);
     }
   }
 
-  return (
-    <section className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800/80 pb-4">
-        <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Správa přístupu & Audit</h1>
-          <p className="text-xs text-slate-400">Registrace aplikací, matice oprávnění a sledování přihlášení</p>
-        </div>
-
-        <div className="flex gap-1.5">
+  if (view === "audit")
+    return (
+      <section className="workspace" aria-labelledby="audit-title">
+        <div className="workspace-heading">
+          <div>
+            <span className="eyebrow">Správa / přehled</span>
+            <h1 id="audit-title">Aktivita</h1>
+            <p>Přihlášení, přístupy a záznamy o spuštění aplikací.</p>
+          </div>
           <button
-            className={adminTab === "apps" ? "tab tab-active" : "tab"}
-            onClick={() => setAdminTab("apps")}
+            type="button"
+            className="button-secondary"
+            onClick={() => void refreshAudit()}
+            disabled={isLoadingAudit}
           >
-            Aplikace & Práva
-          </button>
-          <button
-            className={adminTab === "audit" ? "tab tab-active" : "tab"}
-            onClick={() => setAdminTab("audit")}
-          >
-            Uživatelé & Audit přihlášení
+            {isLoadingAudit ? "Obnovování…" : "Obnovit přehled"}
+            <span aria-hidden="true">↻</span>
           </button>
         </div>
-      </div>
-
-      {adminTab === "apps" && (
-        <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-          <aside className="space-y-4">
-            <form className="panel space-y-3" onSubmit={createApplication}>
-              <h2 className="font-mono-code text-xs font-bold uppercase tracking-wider text-slate-300">Registrovat aplikaci</h2>
-              <input className="input" value={newName} onChange={(event) => handleNewNameChange(event.target.value)} placeholder="Zobrazovaný název" required />
-              <input className="input font-mono-code" value={newKey} onChange={(event) => setNewKey(event.target.value)} placeholder="app-klic" pattern="[a-z0-9][a-z0-9-]{1,98}" required />
-              <input className="input font-mono-code" type="url" value={newLaunchUrl} onChange={(event) => setNewLaunchUrl(event.target.value)} placeholder="https://app.example.com" required />
-              <select className="input font-mono-code" value={newMode} onChange={(event) => setNewMode(Number(event.target.value))}>
-                <option value={0}>Veřejná</option>
-                <option value={1}>Omezená</option>
-              </select>
-              <button className="button-primary w-full text-xs font-bold">Vytvořit aplikaci</button>
-            </form>
-
-            <div className="panel p-2 space-y-1">
-              <div className="px-2 py-1.5 font-mono-code text-[10px] text-slate-500 border-b border-slate-800/80 mb-1">
-                REGISTROVANÉ APLIKACE ({applications.length})
-              </div>
-              {applications.map((application) => (
-                <button
-                  key={application.key}
-                  className={selectedKey === application.key ? "app-row app-row-active" : "app-row"}
-                  onClick={() => void select(application.key)}
-                >
-                  <span className="min-w-0 text-left">
-                    <span className="block truncate text-xs font-semibold">{application.displayName}</span>
-                    <span className="block truncate font-mono-code text-[10px] text-slate-500">{application.key}</span>
-                  </span>
-                  <span className={application.isEnabled ? "h-1.5 w-1.5 rounded-full bg-emerald-400" : "h-1.5 w-1.5 rounded-full bg-slate-600"} />
-                </button>
-              ))}
+        <section
+          className="audit-section"
+          aria-labelledby="matrix-title"
+          aria-busy={isLoadingAudit}
+        >
+          <div className="section-heading">
+            <h2 id="matrix-title">Uživatelé a přístupy</h2>
+            <span className="count-label">{userMatrix.length} uživatelů</span>
+          </div>
+          {userMatrix.length === 0 ? (
+            <p className="empty-message">
+              {isLoadingAudit
+                ? "Načítání uživatelů…"
+                : "Zatím nemáme žádné údaje o uživatelích."}
+            </p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Uživatel</th>
+                    <th>Role</th>
+                    <th>Přístupné aplikace</th>
+                    <th>Poslední aktivita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userMatrix.map((item) => (
+                    <tr key={item.subject}>
+                      <td>
+                        <span className="cell-name">
+                          {item.userName ?? item.subject}
+                        </span>
+                        <span className="cell-secondary mono">
+                          {item.subject}
+                        </span>
+                      </td>
+                      <td>
+                        <Tags items={item.roles} />
+                      </td>
+                      <td>
+                        <Tags items={item.accessibleApplicationKeys} />
+                      </td>
+                      <td className="date-cell">
+                        {formatDate(item.lastActiveAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </aside>
+          )}
+        </section>
+        <section
+          className="audit-section"
+          aria-labelledby="events-title"
+          aria-busy={isLoadingAudit}
+        >
+          <div className="section-heading">
+            <h2 id="events-title">Poslední události</h2>
+            <span className="count-label">{auditLogs.length} záznamů</span>
+          </div>
+          {auditLogs.length === 0 ? (
+            <p className="empty-message">
+              {isLoadingAudit
+                ? "Načítání událostí…"
+                : "Zatím nebyly zaznamenány žádné události."}
+            </p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Čas</th>
+                    <th>Uživatel</th>
+                    <th>Událost</th>
+                    <th>Aplikace</th>
+                    <th>IP adresa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="date-cell">{formatDate(log.timestamp)}</td>
+                      <td>
+                        <span className="cell-name">
+                          {log.userName ?? log.subject}
+                        </span>
+                        <span className="cell-secondary mono">
+                          {log.subject}
+                        </span>
+                      </td>
+                      <td>{log.action}</td>
+                      <td>
+                        <span className="cell-name">
+                          {log.applicationName ?? log.applicationKey ?? "—"}
+                        </span>
+                        {log.applicationKey && (
+                          <span className="cell-secondary mono">
+                            {log.applicationKey}
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono">{log.ipAddress ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </section>
+    );
 
-          <section className="panel min-h-96">
-            {!detail ? (
-              <div className="grid min-h-80 place-items-center font-mono-code text-xs text-slate-500">
-                Vyberte aplikaci ze seznamu vlevo pro úpravu konfigurace.
+  return (
+    <section className="workspace" aria-labelledby="admin-title">
+      <div className="workspace-heading">
+        <div>
+          <span className="eyebrow">Správa / aplikace</span>
+          <h1 id="admin-title">Správa aplikací</h1>
+          <p>Nastavení aplikací a pravidel přístupu.</p>
+        </div>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => setShowCreate(true)}
+        >
+          Nová aplikace<span aria-hidden="true">+</span>
+        </button>
+      </div>
+      <div className="admin-layout">
+        <aside
+          className="application-picker"
+          aria-label="Registrované aplikace"
+        >
+          <div className="list-heading">
+            <span>Aplikace / {applications.length}</span>
+          </div>
+          {isLoadingApps && <p className="empty-message">Načítání aplikací…</p>}
+          {!isLoadingApps && applications.length === 0 && (
+            <p className="empty-message">Přidejte první aplikaci.</p>
+          )}
+          {applications.map((application, index) => (
+            <button
+              type="button"
+              key={application.key}
+              className="picker-row"
+              aria-pressed={selectedKey === application.key}
+              disabled={isSaving}
+              onClick={() => void select(application.key)}
+            >
+              <span className="row-number">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span>
+                <span className="picker-name">{application.displayName}</span>
+                <span className="cell-secondary mono">{application.key}</span>
+                {!application.isEnabled && (
+                  <span className="disabled-label">Vypnuto</span>
+                )}
+              </span>
+              <span className="picker-arrow" aria-hidden="true">
+                →
+              </span>
+            </button>
+          ))}
+        </aside>
+        <section
+          className="application-editor"
+          aria-busy={isLoadingDetail || isSaving}
+        >
+          {!detail ? (
+            <div className="empty-state">
+              <span className="eyebrow">Nastavení aplikace</span>
+              <h2>{isLoadingDetail ? "Načítání…" : "Vyberte aplikaci."}</h2>
+              <p>
+                {isLoadingDetail
+                  ? "Připravujeme aktuální nastavení."
+                  : "Její nastavení a oprávnění najdete tady."}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="editor-heading">
+                <div>
+                  <span className="eyebrow mono">{detail.key}</span>
+                  <h2>{detail.displayName}</h2>
+                </div>
+                <span className="state-label">
+                  {detail.isEnabled ? "Zapnuto" : "Vypnuto"}
+                </span>
               </div>
-            ) : (
-              <div className="space-y-6">
-                <form className="grid gap-4 md:grid-cols-2" onSubmit={saveApplication}>
+              <form className="editor-form" onSubmit={saveApplication}>
+                <fieldset disabled={isSaving} className="form-grid">
                   <label className="field">
-                    <span>Zobrazovaný název</span>
-                    <input className="input" value={detail.displayName} onChange={(event) => setDetail({ ...detail, displayName: event.target.value })} required />
+                    <span>Název aplikace</span>
+                    <input
+                      className="input"
+                      value={detail.displayName}
+                      onChange={(event) =>
+                        setDetail({
+                          ...detail,
+                          displayName: event.target.value,
+                        })
+                      }
+                      required
+                    />
                   </label>
                   <label className="field">
-                    <span>Cílová URL adresa</span>
-                    <input className="input font-mono-code" type="url" value={detail.launchUrl} onChange={(event) => setDetail({ ...detail, launchUrl: event.target.value })} required />
+                    <span>Adresa aplikace</span>
+                    <input
+                      className="input"
+                      type="url"
+                      value={detail.launchUrl}
+                      onChange={(event) =>
+                        setDetail({ ...detail, launchUrl: event.target.value })
+                      }
+                      required
+                    />
                   </label>
                   <label className="field">
-                    <span>Režim přístupu</span>
-                    <select className="input font-mono-code" value={detail.accessMode === "Restricted" || detail.accessMode === 1 ? 1 : 0} onChange={(event) => setDetail({ ...detail, accessMode: Number(event.target.value) as 0 | 1 })}>
-                      <option value={0}>Veřejná</option>
-                      <option value={1}>Omezená</option>
+                    <span>Přístup</span>
+                    <select
+                      className="input"
+                      value={isRestricted(detail.accessMode) ? 1 : 0}
+                      onChange={(event) =>
+                        setDetail({
+                          ...detail,
+                          accessMode: Number(event.target.value) as 0 | 1,
+                        })
+                      }
+                    >
+                      <option value={0}>Všichni přihlášení</option>
+                      <option value={1}>Vybraní uživatelé a role</option>
                     </select>
                   </label>
-                  <label className="flex items-center gap-2.5 text-xs font-medium text-slate-300">
-                    <input className="h-3.5 w-3.5 accent-slate-200 rounded border-slate-700" type="checkbox" checked={detail.isEnabled} onChange={(event) => setDetail({ ...detail, isEnabled: event.target.checked })} />
-                    Povoleno pro uživatelský přístup
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={detail.isEnabled}
+                      onChange={(event) =>
+                        setDetail({
+                          ...detail,
+                          isEnabled: event.target.checked,
+                        })
+                      }
+                    />
+                    <span>Aplikace je dostupná uživatelům</span>
                   </label>
-                  <div className="md:col-span-2 flex items-center justify-between border-t border-slate-800/80 pt-4">
-                    <div className="flex gap-3">
-                      <button className="button-danger" type="button" onClick={() => void deleteApp(detail.key)}>
-                        Smazat aplikaci
-                      </button>
-                      <button className="button-secondary" type="button" onClick={() => setShowIntegrationGuide(true)}>
-                        Návod na integraci
-                      </button>
-                    </div>
-                    <button className="button-primary">Uložit konfiguraci</button>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setShowIntegration(true)}
+                    >
+                      Návod na integraci<span aria-hidden="true">↗</span>
+                    </button>
+                    <button type="submit" className="button-primary">
+                      {isSaving ? "Ukládání…" : "Uložit změny"}
+                    </button>
                   </div>
-                </form>
-
-                <AccessList
-                  title="Explicitní uživatelská oprávnění"
-                  items={detail.userSubjects}
-                  input={subject}
-                  setInput={setSubject}
-                  placeholder="OIDC subject (např. usr_12345)"
-                  onAdd={() => mutate(async () => { await api.grantUser(detail.key, subject); setSubject(""); })}
-                  onRemove={(value) => mutate(() => api.revokeUser(detail.key, value))}
-                />
-                <AccessList
-                  title="Autorizované IdP role"
-                  items={detail.roles}
-                  input={role}
-                  setInput={setRole}
-                  placeholder="Název role (např. platform-admin)"
-                  onAdd={() => mutate(async () => { await api.grantRole(detail.key, role); setRole(""); })}
-                  onRemove={(value) => mutate(() => api.revokeRole(detail.key, value))}
-                />
+                </fieldset>
+              </form>
+              <AccessList
+                key={`${detail.key}-users`}
+                title="Uživatelé"
+                description="Přístup podle jedinečného identifikátoru účtu."
+                items={detail.userSubjects}
+                label="Identifikátor uživatele"
+                placeholder="Např. usr_12345"
+                disabled={isSaving}
+                onAdd={(value) =>
+                  mutate(() => api.grantUser(detail.key, value))
+                }
+                onRemove={(value) =>
+                  void mutate(() => api.revokeUser(detail.key, value))
+                }
+              />
+              <AccessList
+                key={`${detail.key}-roles`}
+                title="Role"
+                description="Přístup podle role přiřazené účtu."
+                items={detail.roles}
+                label="Název role"
+                placeholder="Např. finance"
+                disabled={isSaving}
+                onAdd={(value) =>
+                  mutate(() => api.grantRole(detail.key, value))
+                }
+                onRemove={(value) =>
+                  void mutate(() => api.revokeRole(detail.key, value))
+                }
+              />
+              <div className="editor-bottom">
+                <button
+                  type="button"
+                  className="text-button danger-text"
+                  disabled={isSaving}
+                  onClick={() => void deleteApp(detail.key)}
+                >
+                  Smazat aplikaci
+                </button>
               </div>
-            )}
-          </section>
-        </div>
-      )}
-
-      {adminTab === "audit" && (
-        <section className="space-y-6">
-          {/* User Matrix Panel */}
-          <div className="panel space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-              <div>
-                <h2 className="font-bold text-sm text-white">Přehled uživatelů & přístupné aplikace</h2>
-                <p className="text-xs text-slate-400">Matice aktivních uživatelů a aplikací, ke kterým mají oprávnění</p>
-              </div>
-              <button className="button-secondary text-xs" onClick={() => void refreshAudit()} disabled={isLoadingAudit}>
-                {isLoadingAudit ? "Obnovování..." : "Obnovit přehled"}
-              </button>
-            </div>
-
-            {userMatrix.length === 0 ? (
-              <p className="font-mono-code text-xs text-slate-500 py-4 text-center">Žádní uživatelé zatím neprovedli žádnou aktivitu.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left font-mono-code text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase">
-                      <th className="py-2.5 px-3">Uživatel / Subject</th>
-                      <th className="py-2.5 px-3">IdP Role</th>
-                      <th className="py-2.5 px-3">Přístupné aplikace</th>
-                      <th className="py-2.5 px-3 text-right">Poslední aktivita</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {userMatrix.map((item) => (
-                      <tr key={item.subject} className="hover:bg-[#181a22] transition">
-                        <td className="py-3 px-3">
-                          <span className="block font-semibold text-slate-200">{item.userName ?? item.subject}</span>
-                          <span className="block text-[11px] text-slate-500">{item.subject}</span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="flex flex-wrap gap-1">
-                            {item.roles.map((r) => (
-                              <span key={r} className="rounded border border-slate-800 bg-[#181a24] px-2 py-0.5 text-[10px] text-slate-300">
-                                {r}
-                              </span>
-                            ))}
-                            {item.roles.length === 0 && <span className="text-slate-500 text-[11px]">—</span>}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="flex flex-wrap gap-1">
-                            {item.accessibleApplicationKeys.map((appKey) => (
-                              <span key={appKey} className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-                                {appKey}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-right text-[11px] text-slate-400">
-                          {formatDate(item.lastActiveAt)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Activity Audit Log Stream */}
-          <div className="panel space-y-4">
-            <div className="border-b border-slate-800/80 pb-3">
-              <h2 className="font-bold text-sm text-white">Audit log přihlášení a akcí</h2>
-              <p className="text-xs text-slate-400">Reálný časový záznam přístupů uživatelů k aplikacím</p>
-            </div>
-
-            {auditLogs.length === 0 ? (
-              <p className="font-mono-code text-xs text-slate-500 py-4 text-center">Zatím nebyly zaznamenány žádné události auditu.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left font-mono-code text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase">
-                      <th className="py-2.5 px-3">Čas záznamu</th>
-                      <th className="py-2.5 px-3">Uživatel</th>
-                      <th className="py-2.5 px-3">Akce</th>
-                      <th className="py-2.5 px-3">Cílová aplikace</th>
-                      <th className="py-2.5 px-3 text-right">IP adresa</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {auditLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-[#181a22] transition">
-                        <td className="py-2.5 px-3 text-[11px] text-slate-400">
-                          {formatDate(log.timestamp)}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="block font-semibold text-slate-200">{log.userName ?? log.subject}</span>
-                          <span className="block text-[10px] text-slate-500">{log.subject}</span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
-                            {log.action}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="text-slate-200 font-semibold">{log.applicationName ?? log.applicationKey ?? "—"}</span>
-                          {log.applicationKey && <span className="block text-[10px] text-slate-500">{log.applicationKey}</span>}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-[11px] text-slate-400">
-                          {log.ipAddress ?? "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+            </>
+          )}
+          <p className="save-status" role="status">
+            {status}
+          </p>
         </section>
+      </div>
+      {showCreate && (
+        <CreateApplicationDialog
+          onClose={() => setShowCreate(false)}
+          onCreate={createApplication}
+        />
       )}
-
-      {showIntegrationGuide && detail && (
-        <IntegrationGuideModal appKey={detail.key} onClose={() => setShowIntegrationGuide(false)} />
+      {showIntegration && detail && (
+        <IntegrationGuide
+          appKey={detail.key}
+          onClose={() => setShowIntegration(false)}
+        />
       )}
     </section>
+  );
+}
+
+function Tags({ items }: { items: string[] }) {
+  return items.length ? (
+    <span className="tag-list">
+      {items.map((item) => (
+        <span className="tag" key={item}>
+          {item}
+        </span>
+      ))}
+    </span>
+  ) : (
+    <span className="muted">—</span>
   );
 }
 
 function AccessList({
   title,
+  description,
   items,
-  input,
-  setInput,
+  label,
   placeholder,
+  disabled,
   onAdd,
-  onRemove
+  onRemove,
 }: {
   title: string;
+  description: string;
   items: string[];
-  input: string;
-  setInput: (value: string) => void;
+  label: string;
   placeholder: string;
-  onAdd: () => void;
+  disabled: boolean;
+  onAdd: (value: string) => Promise<boolean>;
   onRemove: (value: string) => void;
 }) {
+  const [input, setInput] = useState("");
   return (
-    <section className="border-t border-slate-800/80 pt-5">
-      <div className="mb-2.5 flex items-center justify-between">
-        <h2 className="font-mono-code text-[11px] font-bold uppercase tracking-wider text-slate-400">{title}</h2>
-        <span className="rounded border border-slate-800 bg-[#16181f] px-2 py-0.5 font-mono-code text-[10px] text-slate-400">{items.length}</span>
+    <section className="access-section">
+      <div className="section-heading">
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <span className="count-label">{items.length}</span>
       </div>
-      <div className="flex gap-2">
-        <input className="input font-mono-code" value={input} onChange={(event) => setInput(event.target.value)} placeholder={placeholder} />
-        <button className="button-secondary shrink-0" type="button" onClick={onAdd} disabled={!input.trim()}>
-          Přidat oprávnění
+      <form
+        className="grant-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (input.trim())
+            void onAdd(input.trim()).then((succeeded) => {
+              if (succeeded) setInput("");
+            });
+        }}
+      >
+        <label className="field">
+          <span className="sr-only">{label}</span>
+          <input
+            className="input"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+          />
+        </label>
+        <button
+          type="submit"
+          className="button-secondary"
+          disabled={disabled || !input.trim()}
+        >
+          Přidat
         </button>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {items.length === 0 && <span className="font-mono-code text-[11px] text-slate-500">Žádná přiřazená oprávnění.</span>}
+      </form>
+      <div className="assignment-list">
+        {items.length === 0 && (
+          <p className="empty-message">Zatím bez přiřazených oprávnění.</p>
+        )}
         {items.map((item) => (
           <span className="assignment" key={item}>
-            {item}
-            <button type="button" onClick={() => onRemove(item)} aria-label={`Odstranit ${item}`}>
+            <span>{item}</span>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onRemove(item)}
+              aria-label={`Odstranit oprávnění ${item}`}
+            >
               ×
             </button>
           </span>
@@ -700,67 +1019,223 @@ function AccessList({
   );
 }
 
-function IntegrationGuideModal({ appKey, onClose }: { appKey: string; onClose: () => void }) {
+function Dialog({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0e0f12]/80 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-slate-800 bg-[#14151b] p-8 shadow-2xl">
-        <button onClick={onClose} className="absolute right-5 top-5 text-slate-500 hover:text-white transition">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+    <dialog
+      ref={ref}
+      className="dialog"
+      aria-label={title}
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        )
+          onClose();
+      }}
+    >
+      <div className="dialog-heading">
+        <h2>{title}</h2>
+        <button
+          type="button"
+          className="dialog-close"
+          aria-label="Zavřít dialog"
+          onClick={onClose}
+        >
+          ×
         </button>
-        
-        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-          Integrace aplikace: <span className="text-emerald-400 font-mono-code">{appKey}</span>
-        </h2>
-        
-        <div className="space-y-6 text-sm text-slate-300 leading-relaxed">
+      </div>
+      {children}
+    </dialog>
+  );
+}
+
+function CreateApplicationDialog({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (payload: NewApplication) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [key, setKey] = useState("");
+  const [url, setUrl] = useState("");
+  const [mode, setMode] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setIsPending(true);
+    setError(null);
+    try {
+      await onCreate({
+        key,
+        displayName: name,
+        launchUrl: url,
+        accessMode: mode,
+      });
+    } catch (reason) {
+      setError(messageFrom(reason, "Aplikaci se nepodařilo vytvořit."));
+      setIsPending(false);
+    }
+  }
+  return (
+    <Dialog title="Nová aplikace" onClose={onClose}>
+      <p className="dialog-intro">Přidejte aplikaci do pracovního prostoru.</p>
+      <ErrorNotice message={error} />
+      <form onSubmit={submit}>
+        <fieldset className="dialog-form" disabled={isPending}>
+          <label className="field">
+            <span>Název aplikace</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (!key || key === generateSlug(name))
+                  setKey(generateSlug(value));
+                setName(value);
+              }}
+              required
+              autoFocus
+            />
+          </label>
+          <div className="field">
+            <label htmlFor="new-application-key">Klíč aplikace</label>
+            <input
+              id="new-application-key"
+              aria-describedby="new-application-key-help"
+              className="input mono"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+              pattern="[a-z0-9][a-z0-9-]{1,98}"
+              required
+            />
+            <small id="new-application-key-help">2–99 znaků: malá písmena, číslice a pomlčky.</small>
+          </div>
+          <label className="field">
+            <span>Adresa aplikace</span>
+            <input
+              className="input"
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://app.example.com"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Přístup</span>
+            <select
+              className="input"
+              value={mode}
+              onChange={(event) => setMode(Number(event.target.value))}
+            >
+              <option value={0}>Všichni přihlášení</option>
+              <option value={1}>Vybraní uživatelé a role</option>
+            </select>
+          </label>
+          <div className="dialog-actions">
+            <button type="button" className="text-button" onClick={onClose}>
+              Zrušit
+            </button>
+            <button type="submit" className="button-primary">
+              {isPending ? "Vytváření…" : "Vytvořit aplikaci"}
+            </button>
+          </div>
+        </fieldset>
+      </form>
+    </Dialog>
+  );
+}
+
+function IntegrationGuide({
+  appKey,
+  onClose,
+}: {
+  appKey: string;
+  onClose: () => void;
+}) {
+  const runtime = window.__VORTEX_CONFIG__;
+  const authority =
+    runtime?.oidcAuthority ?? import.meta.env.VITE_OIDC_AUTHORITY;
+  const scope =
+    runtime?.oidcScope ??
+    import.meta.env.VITE_OIDC_SCOPE ??
+    "openid profile email";
+  return (
+    <Dialog title={`Integrace / ${appKey}`} onClose={onClose}>
+      <div className="integration-guide">
+        <p>
+          Aplikace musí ověřit přihlášení i oprávnění ke každému chráněnému
+          požadavku.
+        </p>
+        <section>
+          <span className="eyebrow">01 / Přihlášení</span>
+          <h3>OpenID Connect</h3>
           <p>
-            Vortex zajišťuje autorizaci (ověření práv) pomocí OIDC a vlastního API. K vaší aplikaci <strong className="text-slate-100">{appKey}</strong> lze přistupovat přes SSO.
+            Vlastní aplikaci zaregistrujte jako samostatného OIDC klienta u
+            poskytovatele identity.
           </p>
-
-          <div className="space-y-3">
-            <h3 className="font-bold text-white">1. Možnost: Konfigurace OIDC klienta (Frontend / Plná integrace)</h3>
-            <p className="text-slate-400 text-xs">Pokud vaše aplikace podporuje přihlašování přes OpenID Connect, nastavte tyto hodnoty:</p>
-            <div className="bg-[#0e0f12] border border-slate-800 rounded-lg p-4 font-mono-code text-xs space-y-3">
-              <div>
-                <span className="text-slate-500 block mb-1">OIDC Authority (Issuer):</span> 
-                <span className="text-emerald-300 select-all">{window.location.origin}/application/o/vortex-portal/</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block mb-1">Doporučené Scopes:</span> 
-                <span className="text-white select-all">openid profile email vortex-api</span>
-              </div>
-            </div>
-            <p className="text-xs text-slate-400 mt-2">
-              Po získání tokenu můžete ověřit přístup zkoumáním claimu <code className="bg-slate-800 px-1 py-0.5 rounded text-white">roles</code>.
-            </p>
-          </div>
-
-          <div className="space-y-3 border-t border-slate-800/80 pt-6">
-            <h3 className="font-bold text-white">2. Možnost: Autorizace přes Vortex API (Backend)</h3>
-            <p className="text-slate-400 text-xs">
-              Pokud tvoříte backendové API a chcete ověřit, zda má daný uživatel (s jeho access tokenem) právo přistoupit k této aplikaci:
-            </p>
-            <div className="bg-[#0e0f12] border border-slate-800 rounded-lg p-4 font-mono-code text-xs leading-relaxed">
-              <span className="text-emerald-400 font-bold">POST</span> {window.__VORTEX_CONFIG__?.apiUrl || window.location.origin}/api/apps/<span className="text-emerald-300">{appKey}</span>/launch<br/>
-              <span className="text-slate-500">Authorization:</span> Bearer &lt;access_token&gt;
-            </div>
-            <ul className="list-disc pl-5 text-xs text-slate-400 space-y-1">
-              <li><strong className="text-emerald-400">200 OK</strong> – Uživatel má povolený přístup (zapsáno do auditu).</li>
-              <li><strong className="text-rose-400">403 Forbidden</strong> – Přístup odepřen.</li>
-              <li><strong className="text-rose-400">401 Unauthorized</strong> – Neplatný token.</li>
-              <li><strong className="text-rose-400">404 Not Found</strong> – Aplikace neexistuje nebo je vypnutá.</li>
-            </ul>
-          </div>
-
-        </div>
-        
-        <div className="mt-10 flex justify-end">
-          <button className="button-secondary" onClick={onClose}>Rozumím, zavřít</button>
+          <dl>
+            <dt>Authority / issuer</dt>
+            <dd>
+              <code>{authority}</code>
+            </dd>
+            <dt>Scopes portálu</dt>
+            <dd>
+              <code>{scope}</code>
+            </dd>
+          </dl>
+        </section>
+        <section>
+          <span className="eyebrow">02 / Přístup</span>
+          <h3>Autorizace přes API</h3>
+          <p>
+            Na backendu ověřte přístup pomocí access tokenu. Úspěšný požadavek
+            se také zapíše do auditu.
+          </p>
+          <pre>
+            <code>
+              POST {runtime?.apiUrl || window.location.origin}/api/apps/{appKey}
+              /launch{"\n"}Authorization: Bearer &lt;access_token&gt;
+            </code>
+          </pre>
+          <dl className="response-codes">
+            <dt>200</dt>
+            <dd>Přístup povolen, spuštění zaznamenáno.</dd>
+            <dt>401</dt>
+            <dd>Chybí platné přihlášení.</dd>
+            <dt>403</dt>
+            <dd>Uživatel nemá oprávnění.</dd>
+            <dt>404</dt>
+            <dd>Aplikace neexistuje nebo je vypnutá.</dd>
+          </dl>
+        </section>
+        <div className="dialog-actions">
+          <button type="button" className="button-secondary" onClick={onClose}>
+            Zavřít návod
+          </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
