@@ -200,7 +200,7 @@ export function App() {
     profile?.roles.some((role) =>
       ["platform-admin", "authentik admins"].includes(role.toLowerCase()),
     ) ?? false;
-  const name = profile?.name ?? "Uživatel";
+  const name = profile?.name?.trim() || "Uživatel";
   const initials = name
     .trim()
     .split(/\s+/)
@@ -303,7 +303,7 @@ function SignIn({ error }: { error: string | null }) {
         <section className="signin-content">
           <span className="eyebrow">SSO</span>
           <h1>Přihlášení.</h1>
-          <p>
+          <p className="signin-description">
             Pokračujte se svým účtem.
           </p>
           <ErrorNotice message={signInError ?? error} />

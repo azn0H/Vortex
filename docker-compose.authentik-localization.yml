@@ -1,0 +1,16 @@
+# Use together with docker-compose.yml. Only the Czech frontend catalog differs
+# from the configured official image; persistent data and service settings stay
+# in the base Compose file.
+services:
+  authentik-server:
+    image: vortex-authentik-cs:${AUTHENTIK_TAG:-2026.5.0}
+    build:
+      context: ./infrastructure/authentik/localization
+      args:
+        AUTHENTIK_TAG: ${AUTHENTIK_TAG:-2026.5.0}
+  authentik-worker:
+    image: vortex-authentik-cs:${AUTHENTIK_TAG:-2026.5.0}
+    build:
+      context: ./infrastructure/authentik/localization
+      args:
+        AUTHENTIK_TAG: ${AUTHENTIK_TAG:-2026.5.0}
