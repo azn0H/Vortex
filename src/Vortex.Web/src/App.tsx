@@ -200,7 +200,7 @@ export function App() {
     profile?.roles.some((role) =>
       ["platform-admin", "authentik admins"].includes(role.toLowerCase()),
     ) ?? false;
-  const name = profile?.name ?? "Uživatel";
+  const name = profile?.name?.trim() || "Uživatel";
   const initials = name
     .trim()
     .split(/\s+/)

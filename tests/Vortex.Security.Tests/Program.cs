@@ -17,6 +17,7 @@ using Vortex.Api.Infrastructure;
 
 var cases = new (string Name, Func<Task> Run)[]
 {
+    ("blank profile name falls back to signed username", ProfileDisplayName),
     ("unauthenticated subject cannot launch", () => LaunchCase(User("alice", authenticated: false), "billing", 401)),
     ("missing subject cannot launch", () => LaunchCase(User(null), "billing", 401)),
     ("whitespace subject cannot launch", () => LaunchCase(User(" "), "billing", 401)),
@@ -45,6 +46,21 @@ foreach (var test in cases)
     Console.WriteLine($"PASS {test.Name}");
 }
 Console.WriteLine($"{cases.Length} security regression checks passed.");
+
+static Task ProfileDisplayName()
+{
+    foreach (var name in new[] { "", "   " })
+    {
+        var user = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("name", name), new Claim("preferred_username", " Aznoh ") },
+            "test", "name", ClaimTypes.Role));
+        Assert(UserProfile.DisplayName(user) == "Aznoh", "Empty names must show the username");
+    }
+    Assert(UserProfile.DisplayName(User("alice")) == "Alice", "Existing display names must remain intact");
+    Assert(UserProfile.DisplayName(new ClaimsPrincipal(new ClaimsIdentity())) == "Uživatel",
+        "Missing profile claims must not render a blank account label");
+    return Task.CompletedTask;
+}
 
 static ClaimsPrincipal User(string? subject, string? role = null, bool authenticated = true)
 {

@@ -138,7 +138,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymo
 app.MapGet("/api/me", async (ClaimsPrincipal user, HttpContext httpContext, AppDbContext dbContext) =>
 {
     var subject = user.FindFirstValue("sub");
-    var name = user.Identity?.Name;
+    var name = UserProfile.DisplayName(user);
     var roles = user.FindAll(ClaimTypes.Role).Select(x => x.Value).Distinct().Order().ToArray();
 
     if (!string.IsNullOrEmpty(subject))

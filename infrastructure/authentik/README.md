@@ -35,3 +35,19 @@ Identity__ApiAudience=vortex-api
 Identity__RolesClaimType=roles
 Identity__AdministratorRole=platform-admin
 ```
+
+## Portal appearance on Authentik flows
+
+The production sign-in pages use the same typographic style as Vortex. The stylesheet, application steps, and restore instructions are in [branding/README.md](branding/README.md). Branding is saved in Authentik's database; a frontend rebuild is not required.
+
+## Self-service registration
+
+The registration flow, email transport, access boundary, and deployment status are documented in [registration.md](registration.md). Its SMTP password is entered directly in Authentik and must not be committed to Git.
+
+## Production logout
+
+On 2026-10-03 the Vortex Portal provider's **Invalidation Flow** was changed from `default-provider-invalidation-flow` to `default-invalidation-flow`. The latter contains `default-invalidation-logout` (User Logout Stage) and ends the Authentik session. A live portal logout followed by a new sign-in was checked: the identification form appeared instead of automatically restoring the previous account.
+
+The strict post-logout redirect URI remains `https://sso.aznoh.cz`. **Logout URI** (logout notifications) is empty: Vortex's static frontend does not implement an OIDC back-channel notification endpoint. A portal origin in that field cannot process the signed logout POST. This setting is separate from the post-logout redirect URI. These are Authentik database settings and are not changed by rebuilding Vortex.
+
+The portal's `/api/me` response falls back from an empty `name` claim to `preferred_username`; self-service registration does not collect a separate display name. The same label is used for application-launch audit entries. User identity and access decisions continue to use the subject and roles.

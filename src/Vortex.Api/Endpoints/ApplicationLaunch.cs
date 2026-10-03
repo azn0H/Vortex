@@ -36,7 +36,7 @@ public static class ApplicationLaunch
         dbContext.UserAccessLogs.Add(new UserAccessLog
         {
             Subject = subject,
-            UserName = user.Identity?.Name,
+            UserName = UserProfile.DisplayName(user),
             ApplicationKey = application.Key,
             ApplicationName = application.DisplayName,
             Action = "Spuštění aplikace",
