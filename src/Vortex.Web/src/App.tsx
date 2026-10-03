@@ -303,6 +303,7 @@ function SignIn({ error }: { error: string | null }) {
         <section className="signin-content">
           <span className="eyebrow">SSO</span>
           <h1>Přihlášení.</h1>
+          <p>
             Pokračujte se svým účtem.
           </p>
           <ErrorNotice message={signInError ?? error} />
